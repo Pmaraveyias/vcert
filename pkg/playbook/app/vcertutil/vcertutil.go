@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,6 +33,13 @@ import (
 	"github.com/Venafi/vcert/v5/pkg/util"
 	"github.com/Venafi/vcert/v5/pkg/venafi/tpp"
 )
+
+type TPPLogger struct {
+	logLevel     string
+	hostName     string
+	certTaskName string
+	client       endpoint.Connector
+}
 
 // EnrollCertificate takes a Request object and requests a certificate to the Venafi platform defined by config.
 //
@@ -256,4 +264,55 @@ func GeneratePassword() string {
 	randString := string(b)
 
 	return fmt.Sprintf("t%d-%s.temp.pwd", time.Now().Unix(), randString)
+}
+
+func WriteTppLogInfo(tppLogger TPPLogger, eventId string) error {
+	if tppLogger.logLevel != "info" {
+		return nil
+	}
+	logReq := endpoint.LogRequest{
+		LogID:  eventId,
+		Text1:  tppLogger.certTaskName,
+		Value1: tppLogger.hostName,
+	}
+
+	err := tppLogger.client.WriteLog(&logReq)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteTppLogErr(tppLogger TPPLogger, err string, stage string) error {
+	logReq := endpoint.LogRequest{
+		LogID:  "20000010",
+		Text1:  tppLogger.certTaskName,
+		Text2:  err,
+		Value1: tppLogger.hostName,
+		Value2: stage,
+	}
+
+	logErr := tppLogger.client.WriteLog(&logReq)
+	if logErr != nil {
+		return logErr
+	}
+	return nil
+}
+
+func CreateTPPLogger(config domain.Config, task domain.CertificateTask) (*TPPLogger, error) {
+	logClient, err := buildClient(config, task.Request.Zone)
+	if err != nil {
+		return nil, err
+	}
+
+	hostname, _ := os.Hostname()
+
+	tppLogger := TPPLogger{
+		logLevel:     task.LogToTpp,
+		hostName:     hostname,
+		certTaskName: task.Name,
+		client:       logClient,
+	}
+
+	return &tppLogger, nil
 }

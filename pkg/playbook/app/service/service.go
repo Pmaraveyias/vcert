@@ -44,9 +44,34 @@ const (
 //
 // Config is used to make the connection to the Venafi platform for the certificate request.
 func Execute(config domain.Config, task domain.CertificateTask) []error {
+
+	// Set up logging to TPP if enabled in playbook
+	var tppLogger *vcertutil.TPPLogger
+	if task.LogToTpp == "Info" || task.LogToTpp == "Error" {
+		if config.Connection.Platform == venafi.TPP {
+			tppLogger, err := vcertutil.CreateTPPLogger(config, task)
+			if err != nil {
+				zap.L().Info("error creating tpp logger object, logs will not be written to TPP", zap.String("task", task.Name), zap.Error(err))
+			} else {
+				logErr := vcertutil.WriteTppLogInfo(*tppLogger, "20000001")
+				if logErr != nil {
+					zap.L().Info("error writing info log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+				}
+			}
+		}
+	}
 	// Check if certificate needs action
 	changed, err := isCertificateChanged(config, task)
 	if err != nil {
+		// log error to TPP if error logging enabled
+		if tppLogger != nil {
+			errStr := err.Error()
+			logErr := vcertutil.WriteTppLogErr(*tppLogger, errStr, "checking cert")
+			if logErr != nil {
+				zap.L().Info("error writing error log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		}
+
 		zap.L().Error("error checking certificate in task", zap.String("task", task.Name), zap.Error(err))
 		return []error{err}
 	}
@@ -55,9 +80,22 @@ func Execute(config domain.Config, task domain.CertificateTask) []error {
 	if !changed {
 		zap.L().Info("certificate in good health. No actions needed",
 			zap.String("certificate", task.Request.Subject.CommonName))
+		if tppLogger != nil {
+			logErr := vcertutil.WriteTppLogInfo(*tppLogger, "20000002")
+			if logErr != nil {
+				zap.L().Info("error writing info log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		}
 		return nil
 	}
 	zap.L().Info("certificate needs action", zap.String("certificate", task.Request.Subject.CommonName))
+
+	if tppLogger != nil {
+		logErr := vcertutil.WriteTppLogInfo(*tppLogger, "20000003")
+		if logErr != nil {
+			zap.L().Info("error writing info log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+		}
+	}
 
 	// Ensure there is a keyPassword in the request when origin is service
 	csrOrigin := certificate.ParseCSROrigin(task.Request.CsrOrigin)
@@ -69,6 +107,15 @@ func Execute(config domain.Config, task domain.CertificateTask) []error {
 	// Config changed or certificate needs renewal. Do request
 	pcc, certRequest, err := vcertutil.EnrollCertificate(config, task.Request)
 	if err != nil {
+		// log error to TPP if error logging enabled
+		if tppLogger != nil {
+			errStr := err.Error()
+			logErr := vcertutil.WriteTppLogErr(*tppLogger, errStr, "requesting cert")
+			if logErr != nil {
+				zap.L().Info("error writing error log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		}
+
 		return []error{fmt.Errorf("error requesting certificate %s: %w", task.Name, err)}
 	}
 	zap.L().Info("successfully enrolled certificate", zap.String("certificate", task.Request.Subject.CommonName))
@@ -84,6 +131,14 @@ func Execute(config domain.Config, task domain.CertificateTask) []error {
 	// It will also decrypt the Private Key if it is encrypted
 	x509Certificate, prepedPcc, err := installer.CreateX509Cert(pcc, certRequest, decryptPK)
 	if err != nil {
+		if tppLogger != nil {
+			errStr := err.Error()
+			logErr := vcertutil.WriteTppLogErr(*tppLogger, errStr, "perparing cert")
+			if logErr != nil {
+				zap.L().Info("error writing error log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		}
+
 		e := "error preparing certificate for installation"
 		zap.L().Error(e, zap.Error(err))
 		return []error{fmt.Errorf("%s: %w", e, err)}
@@ -104,6 +159,28 @@ func Execute(config domain.Config, task domain.CertificateTask) []error {
 			errorList = append(errorList, e)
 		}
 	}
+
+	// Log install results to TPP if set
+	if tppLogger != nil {
+		if len(errorList) == 0 {
+			logErr := vcertutil.WriteTppLogInfo(*tppLogger, "2000000F")
+			if logErr != nil {
+				zap.L().Info("error writing info log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		} else {
+			var errStr string
+			if len(errorList) == 1 {
+				errStr = errorList[0].Error()
+			} else {
+				errStr = fmt.Sprintf("multiple install errors: %d", len(errStr))
+			}
+			logErr := vcertutil.WriteTppLogErr(*tppLogger, errStr, "installing cert")
+			if logErr != nil {
+				zap.L().Info("error writing error log to tpp certificate in task", zap.String("task", task.Name), zap.Error(logErr))
+			}
+		}
+	}
+
 	return errorList
 
 }

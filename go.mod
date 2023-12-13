@@ -9,7 +9,7 @@ require (
 	github.com/sosodev/duration v1.1.0
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.8.1
-	github.com/urfave/cli/v2 v2.25.7
+	github.com/urfave/cli/v2 v2.26.0
 	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a
 	go.uber.org/zap v1.23.0
 	golang.org/x/crypto v0.11.0

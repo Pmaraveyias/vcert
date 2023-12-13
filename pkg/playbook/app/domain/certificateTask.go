@@ -29,6 +29,7 @@ type CertificateTask struct {
 	Installations Installations   `yaml:"installations,omitempty"`
 	RenewBefore   string          `yaml:"renewBefore,omitempty"`
 	SetEnvVars    []string        `yaml:"setEnvVars,omitempty"`
+	LogToTpp      string          `yaml:"logToTpp,omitempty"`
 }
 
 // CertificateTasks is a slice of CertificateTask
