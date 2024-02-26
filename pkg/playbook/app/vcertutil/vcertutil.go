@@ -336,6 +336,13 @@ func createTPPLogger(config domain.Config, task domain.CertificateTask) (*TPPLog
 		return nil, err
 	}
 
+	componentString := ""
+	if task.Request.FriendlyName != "" {
+		componentString = getPolicyDN(task.Request.Zone) + "\\" + task.Request.FriendlyName
+	} else {
+		componentString = getPolicyDN(task.Request.Zone) + "\\" + task.Request.Subject.CommonName
+	}
+
 	hostname, _ := os.Hostname()
 
 	tppLogger := TPPLogger{
@@ -343,7 +350,7 @@ func createTPPLogger(config domain.Config, task domain.CertificateTask) (*TPPLog
 		hostName:     hostname,
 		certTaskName: task.Name,
 		client:       logClient,
-		component:    getPolicyDN(task.Request.Zone),
+		component:    componentString,
 	}
 
 	return &tppLogger, nil
